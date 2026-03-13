@@ -17,6 +17,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read project versions
+        id: versions
+        shell: pwsh
+        run: |
+          $setupMatch = Select-String -Path installer/setup.iss -Pattern '^#define\s+MyAppVersion\s+"([^"]+)"' | Select-Object -First 1
+          if (-not $setupMatch) {
+            throw 'Could not read MyAppVersion from installer/setup.iss'
+          }
+          $setupVersion = [regex]::Match($setupMatch.Line, '^#define\s+MyAppVersion\s+"([^"]+)"').Groups[1].Value
+
+          [xml]$csproj = Get-Content 'RentaCaaR.ScannerAgent/RentaCaaR.ScannerAgent.csproj'
+          $csprojVersion = $csproj.Project.PropertyGroup.Version
+          if ([string]::IsNullOrWhiteSpace($csprojVersion)) {
+            throw 'Could not read <Version> from RentaCaaR.ScannerAgent.csproj'
+          }
+
+          "setup_version=$setupVersion" >> $env:GITHUB_OUTPUT
+          "csproj_version=$csprojVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Validate tag version alignment
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tagVersion = '${{ github.ref_name }}'.TrimStart('v')
+          $setupVersion = '${{ steps.versions.outputs.setup_version }}'
+          $csprojVersion = '${{ steps.versions.outputs.csproj_version }}'
+
+          if ($tagVersion -ne $setupVersion) {
+            throw "Tag version ($tagVersion) does not match installer/setup.iss MyAppVersion ($setupVersion)."
+          }
+          if ($tagVersion -ne $csprojVersion) {
+            throw "Tag version ($tagVersion) does not match csproj <Version> ($csprojVersion)."
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
@@ -40,7 +74,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: installer/Output/RentaCaaR-Scanner-Setup-*.exe
+          files: installer/Output/RentaCaaR-Scanner-Setup-${{ steps.versions.outputs.setup_version }}.exe
           generate_release_notes: true
           draft: false
           prerelease: false
