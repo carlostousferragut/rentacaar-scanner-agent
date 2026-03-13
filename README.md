@@ -51,19 +51,31 @@ Output: `installer/Output/RentaCaaR-Scanner-Setup-1.0.4.exe`
 
 This repository includes a workflow at `.github/workflows/release.yml` that:
 
-1. Restores and publishes the agent in `Release`
-2. Installs Inno Setup on the runner
-3. Builds the installer from `installer/setup.iss`
-4. Uploads `RentaCaaR-Scanner-Setup-*.exe` to a GitHub Release
+1. Reads `MyAppVersion` from `installer/setup.iss`
+2. Validates it matches `<Version>` in `RentaCaaR.ScannerAgent.csproj`
+3. Restores and publishes the agent in `Release`
+4. Installs Inno Setup on the runner
+5. Builds the installer from `installer/setup.iss`
+6. Creates/publishes GitHub Release `v{MyAppVersion}` with the installer asset
 
-It runs automatically when you push a tag like `v1.0.2`:
+It runs automatically on `push` to `main` (no manual tag needed).
+
+If release `v{MyAppVersion}` already exists, it skips publishing.
+
+Typical flow:
 
 ```bash
-git tag v1.0.2
-git push origin v1.0.2
+# 1) Bump version in both files to the same value (e.g. 1.0.5)
+#    - RentaCaaR.ScannerAgent/RentaCaaR.ScannerAgent.csproj
+#    - installer/setup.iss
+
+# 2) Commit and push to main
+git add .
+git commit -m "Release 1.0.5"
+git push origin main
 ```
 
-Important: keep the version aligned across `RentaCaaR.ScannerAgent.csproj` and `installer/setup.iss` before creating the tag.
+Important: keep `RentaCaaR.ScannerAgent.csproj` and `installer/setup.iss` versions aligned, otherwise the workflow fails by design.
 
 ## Development (run as console app)
 

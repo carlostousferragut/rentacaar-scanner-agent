@@ -2,8 +2,12 @@ name: Build And Release Installer
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - "main"
+    paths:
+      - "RentaCaaR.ScannerAgent/**"
+      - "installer/setup.iss"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,45 +39,74 @@ jobs:
 
           "setup_version=$setupVersion" >> $env:GITHUB_OUTPUT
           "csproj_version=$csprojVersion" >> $env:GITHUB_OUTPUT
+          "tag_name=v$setupVersion" >> $env:GITHUB_OUTPUT
 
-      - name: Validate tag version alignment
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Validate setup/csproj version alignment
         shell: pwsh
         run: |
-          $tagVersion = '${{ github.ref_name }}'.TrimStart('v')
           $setupVersion = '${{ steps.versions.outputs.setup_version }}'
           $csprojVersion = '${{ steps.versions.outputs.csproj_version }}'
 
-          if ($tagVersion -ne $setupVersion) {
-            throw "Tag version ($tagVersion) does not match installer/setup.iss MyAppVersion ($setupVersion)."
+          if ($setupVersion -ne $csprojVersion) {
+            throw "installer/setup.iss MyAppVersion ($setupVersion) does not match csproj <Version> ($csprojVersion)."
           }
-          if ($tagVersion -ne $csprojVersion) {
-            throw "Tag version ($tagVersion) does not match csproj <Version> ($csprojVersion)."
+
+      - name: Check if release already exists
+        id: release_check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.versions.outputs.tag_name }}'
+          $repo = '${{ github.repository }}'
+          $uri = "https://api.github.com/repos/$repo/releases/tags/$tag"
+
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept        = "application/vnd.github+json"
+          }
+
+          try {
+            Invoke-RestMethod -Method Get -Uri $uri -Headers $headers | Out-Null
+            "should_release=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Release for $tag already exists. Skipping publish."
+          }
+          catch {
+            "should_release=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Release for $tag does not exist yet. Publish will continue."
           }
 
       - name: Setup .NET 8
+        if: steps.release_check.outputs.should_release == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
 
       - name: Restore
+        if: steps.release_check.outputs.should_release == 'true'
         run: dotnet restore RentaCaaR.ScannerAgent/RentaCaaR.ScannerAgent.csproj
 
       - name: Publish
+        if: steps.release_check.outputs.should_release == 'true'
         run: dotnet publish RentaCaaR.ScannerAgent/RentaCaaR.ScannerAgent.csproj -c Release
 
       - name: Install Inno Setup
+        if: steps.release_check.outputs.should_release == 'true'
         run: choco install innosetup --no-progress -y
 
       - name: Build installer
+        if: steps.release_check.outputs.should_release == 'true'
         shell: pwsh
         run: |
           Remove-Item -Path installer/Output/*.exe -ErrorAction SilentlyContinue
           & "C:/Program Files (x86)/Inno Setup 6/ISCC.exe" installer/setup.iss
 
       - name: Publish release
+        if: steps.release_check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.versions.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
           files: installer/Output/RentaCaaR-Scanner-Setup-${{ steps.versions.outputs.setup_version }}.exe
           generate_release_notes: true
           draft: false
