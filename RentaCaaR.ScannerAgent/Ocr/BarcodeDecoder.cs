@@ -1,7 +1,8 @@
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using ZXing;
 using ZXing.Common;
-using ZXing.PDF417;
 
 namespace RentaCaaR.ScannerAgent.Ocr;
 
@@ -14,7 +15,7 @@ public static class BarcodeDecoder
             using var ms = new MemoryStream(imageBytes);
             using var bitmap = new Bitmap(ms);
 
-            var reader = new BarcodeReader<Bitmap>
+            var reader = new BarcodeReaderGeneric
             {
                 AutoRotate = true,
                 Options = new DecodingOptions
@@ -23,17 +24,29 @@ public static class BarcodeDecoder
                     TryHarder = true,
                 },
             };
-            reader.Options.AdditionalOptions[DecodeHintType.TRY_HARDER] = true;
 
-            // ZXing.Net needs a luminance source
-            var luminance = new ZXing.BitmapLuminanceSource(bitmap);
-            var binarizer = new HybridBinarizer(luminance);
-            var binaryBitmap = new BinaryBitmap(binarizer);
+            using var argbBitmap = new Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(argbBitmap))
+            {
+                g.DrawImage(bitmap, 0, 0, bitmap.Width, bitmap.Height);
+            }
 
-            var result = reader.Decode(bitmap);
-            if (result == null) return null;
+            var rect = new Rectangle(0, 0, argbBitmap.Width, argbBitmap.Height);
+            var data = argbBitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                int byteCount = Math.Abs(data.Stride) * data.Height;
+                var pixelBytes = new byte[byteCount];
+                Marshal.Copy(data.Scan0, pixelBytes, 0, byteCount);
+                var result = reader.Decode(pixelBytes, data.Width, data.Height, RGBLuminanceSource.BitmapFormat.BGRA32);
+                if (result == null) return null;
 
-            return ParseDniBarcode(result.Text);
+                return ParseDniBarcode(result.Text);
+            }
+            finally
+            {
+                argbBitmap.UnlockBits(data);
+            }
         }
         catch
         {

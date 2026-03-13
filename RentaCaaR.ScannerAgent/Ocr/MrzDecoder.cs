@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Text.RegularExpressions;
 using Tesseract;
 
@@ -30,7 +31,9 @@ public static class MrzDecoder
             using var engine = new TesseractEngine(TessDataPath, lang, EngineMode.Default);
             engine.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<");
 
-            using var pix = PixConverter.ToPix(croppedBitmap);
+            using var croppedStream = new MemoryStream();
+            croppedBitmap.Save(croppedStream, System.Drawing.Imaging.ImageFormat.Png);
+            using var pix = Pix.LoadFromMemory(croppedStream.ToArray());
             using var page = engine.Process(pix);
             var text = page.GetText() ?? "";
 
