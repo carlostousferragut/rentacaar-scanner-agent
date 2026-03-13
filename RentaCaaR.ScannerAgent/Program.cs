@@ -24,8 +24,11 @@ var fileLogPath = builder.Configuration["FileLogging:Path"] ?? defaultLogPath;
 var fileLogMinLevel = Enum.TryParse<LogLevel>(builder.Configuration["FileLogging:MinLevel"], true, out var parsedLevel)
     ? parsedLevel
     : LogLevel.Information;
+var fileLogRetentionDays = int.TryParse(builder.Configuration["FileLogging:RetentionDays"], out var parsedRetention)
+    ? parsedRetention
+    : 7;
 
-builder.Logging.AddProvider(new FileLoggerProvider(fileLogPath, fileLogMinLevel));
+builder.Logging.AddProvider(new FileLoggerProvider(fileLogPath, fileLogMinLevel, fileLogRetentionDays));
 
 builder.Host.UseWindowsService(options =>
 {
