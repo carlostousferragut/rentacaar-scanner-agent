@@ -28,7 +28,11 @@ public class HeartbeatService : BackgroundService
 
     private async Task SendHeartbeatAsync()
     {
-        if (!_config.IsRegistered || string.IsNullOrEmpty(_config.BackendUrl)) return;
+        if (!_config.IsRegistered || string.IsNullOrEmpty(_config.BackendUrl))
+        {
+            _logger.LogInformation("Skipping heartbeat: agent not registered or backend URL missing");
+            return;
+        }
         try
         {
             var payload = JsonSerializer.Serialize(new { version = AgentConfig.AgentVersion });
@@ -38,12 +42,24 @@ public class HeartbeatService : BackgroundService
             var response = await _http.PostAsync(
                 $"{_config.BackendUrl.TrimEnd('/')}/api/agent/heartbeat", content);
 
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Heartbeat sent successfully. StatusCode={StatusCode}", (int)response.StatusCode);
+            }
+            else
+            {
+                _logger.LogWarning("Heartbeat returned non-success status. StatusCode={StatusCode}", (int)response.StatusCode);
+            }
+
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 _logger.LogWarning("Heartbeat rejected (401), clearing local credentials");
                 _config.ClearCredentials();
             }
         }
-        catch { /* heartbeat is best-effort */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Heartbeat failed");
+        }
     }
 }

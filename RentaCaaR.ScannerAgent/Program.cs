@@ -2,13 +2,30 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using RentaCaaR.ScannerAgent.Config;
+using RentaCaaR.ScannerAgent.Logging;
 using RentaCaaR.ScannerAgent.Scanner;
 using RentaCaaR.ScannerAgent.Ocr;
 using RentaCaaR.ScannerAgent.Update;
+using System.Diagnostics;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var defaultLogPath = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+    "RentaCaaR",
+    "ScannerAgent",
+    "logs",
+    "agent.log");
+
+var fileLogPath = builder.Configuration["FileLogging:Path"] ?? defaultLogPath;
+var fileLogMinLevel = Enum.TryParse<LogLevel>(builder.Configuration["FileLogging:MinLevel"], true, out var parsedLevel)
+    ? parsedLevel
+    : LogLevel.Information;
+
+builder.Logging.AddProvider(new FileLoggerProvider(fileLogPath, fileLogMinLevel));
 
 builder.Host.UseWindowsService(options =>
 {
@@ -40,9 +57,38 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 app.UseCors();
 
+var appLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AgentRuntime");
+
+app.Use(async (ctx, next) =>
+{
+    var sw = Stopwatch.StartNew();
+    appLogger.LogInformation("HTTP {Method} {Path} started", ctx.Request.Method, ctx.Request.Path);
+    try
+    {
+        await next();
+        appLogger.LogInformation(
+            "HTTP {Method} {Path} responded {StatusCode} in {ElapsedMs}ms",
+            ctx.Request.Method,
+            ctx.Request.Path,
+            ctx.Response.StatusCode,
+            sw.ElapsedMilliseconds);
+    }
+    catch (Exception ex)
+    {
+        appLogger.LogError(ex, "HTTP {Method} {Path} failed after {ElapsedMs}ms", ctx.Request.Method, ctx.Request.Path, sw.ElapsedMilliseconds);
+        throw;
+    }
+});
+
 var config = app.Services.GetRequiredService<AgentConfig>();
 var scanner = app.Services.GetRequiredService<WiaScanner>();
 var processor = app.Services.GetRequiredService<DocumentProcessor>();
+
+appLogger.LogInformation(
+    "Scanner agent starting. Version={Version}, Registered={Registered}, BackendUrl={BackendUrl}",
+    AgentConfig.AgentVersion,
+    config.IsRegistered,
+    string.IsNullOrWhiteSpace(config.BackendUrl) ? "(none)" : config.BackendUrl);
 
 // GET /health
 app.MapGet("/health", () => Results.Ok(new
@@ -60,10 +106,12 @@ app.MapGet("/scanners", () =>
     try
     {
         var scanners = scanner.GetScanners();
+        appLogger.LogInformation("/scanners returned {Count} scanner(s)", scanners.Count);
         return Results.Ok(scanners);
     }
     catch (Exception ex)
     {
+        appLogger.LogError(ex, "/scanners failed");
         return Results.Problem(ex.Message);
     }
 });
@@ -78,15 +126,24 @@ app.MapPost("/scan", async (HttpContext ctx) =>
 
     try
     {
+        appLogger.LogInformation("/scan request received. RequestedScannerId={RequestedScannerId}, Dpi={Dpi}", opts.ScannerId, opts.Dpi ?? 300);
         var scanners = scanner.GetScanners();
         if (scanners.Count == 0)
+        {
+            appLogger.LogWarning("/scan failed: no connected scanner found");
             return Results.Problem("No se encontró ningún escáner conectado");
+        }
 
         string scannerId = opts.ScannerId ?? config.DefaultScannerId ?? scanners[0].Id;
         int dpi = opts.Dpi ?? 300;
 
+        appLogger.LogInformation("/scan using scanner {ScannerId} at {Dpi} DPI", scannerId, dpi);
+
         byte[] imageBytes = scanner.Scan(scannerId, dpi);
+        appLogger.LogInformation("/scan image captured: {Bytes} byte(s)", imageBytes.Length);
+
         var fields = processor.Process(imageBytes);
+        appLogger.LogInformation("/scan processing completed. Method={Method}, DocumentType={DocumentType}", fields.Method, fields.DocumentType);
 
         return Results.Ok(new
         {
@@ -96,6 +153,7 @@ app.MapPost("/scan", async (HttpContext ctx) =>
     }
     catch (Exception ex)
     {
+        appLogger.LogError(ex, "/scan failed");
         return Results.Problem(ex.Message);
     }
 });
@@ -111,6 +169,7 @@ app.MapPost("/register", async (HttpContext ctx) =>
 
     try
     {
+        appLogger.LogInformation("/register attempt. BackendUrl={BackendUrl}, Name={Name}", req.BackendUrl, req.Name ?? Environment.MachineName);
         using var http = new HttpClient();
         var payload = JsonSerializer.Serialize(new { token = req.Token, name = req.Name ?? Environment.MachineName });
         var response = await http.PostAsync($"{req.BackendUrl.TrimEnd('/')}/api/agent/activate",
@@ -118,15 +177,20 @@ app.MapPost("/register", async (HttpContext ctx) =>
 
         var responseBody = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
+        {
+            appLogger.LogWarning("/register backend rejected registration. Status={StatusCode}", (int)response.StatusCode);
             return Results.Problem(responseBody);
+        }
 
         var result = JsonSerializer.Deserialize<ActivateResponse>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 
         config.Save(result.AgentId, result.Secret, req.BackendUrl, result.OrgName, result.OfficeName);
+        appLogger.LogInformation("/register success. AgentId={AgentId}, Org={Org}, Office={Office}", result.AgentId, result.OrgName, result.OfficeName);
         return Results.Ok(new { ok = true, orgName = result.OrgName, officeName = result.OfficeName });
     }
     catch (Exception ex)
     {
+        appLogger.LogError(ex, "/register failed");
         return Results.Problem(ex.Message);
     }
 });
@@ -138,7 +202,14 @@ app.MapPost("/settings", async (HttpContext ctx) =>
     var body = await reader.ReadToEndAsync();
     var req = JsonSerializer.Deserialize<SettingsRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
     if (req?.DefaultScannerId != null)
+    {
         config.SaveDefaultScanner(req.DefaultScannerId);
+        appLogger.LogInformation("/settings updated default scanner to {ScannerId}", req.DefaultScannerId);
+    }
+    else
+    {
+        appLogger.LogInformation("/settings called without defaultScannerId change");
+    }
     return Results.Ok(new { ok = true });
 });
 

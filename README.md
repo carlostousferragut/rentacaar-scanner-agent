@@ -45,7 +45,7 @@ Output: `RentaCaaR.ScannerAgent/bin/Release/net8.0-windows/win-x64/publish/Renta
 iscc installer/setup.iss
 ```
 
-Output: `installer/Output/RentaCaaR-Scanner-Setup-1.0.3.exe`
+Output: `installer/Output/RentaCaaR-Scanner-Setup-1.0.4.exe`
 
 ## Automated Release (GitHub Actions)
 

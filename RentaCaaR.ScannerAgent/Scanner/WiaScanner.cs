@@ -9,9 +9,16 @@ public class WiaScanner
 {
     private const string DeviceManagerProgId = "WIA.DeviceManager";
     private const int ScannerDeviceType = 1;
+    private readonly ILogger<WiaScanner> _logger;
+
+    public WiaScanner(ILogger<WiaScanner> logger)
+    {
+        _logger = logger;
+    }
 
     public List<ScannerInfo> GetScanners()
     {
+        _logger.LogInformation("Enumerating WIA scanners");
         var managerType = Type.GetTypeFromProgID(DeviceManagerProgId)
             ?? throw new NotSupportedException("WIA no está disponible en este sistema");
         dynamic manager = Activator.CreateInstance(managerType)!;
@@ -28,13 +35,18 @@ public class WiaScanner
                     result.Add(new ScannerInfo(id, name));
                 }
             }
-            catch { /* skip unavailable devices */ }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Skipping unavailable WIA device while enumerating");
+            }
         }
+        _logger.LogInformation("WIA enumeration completed: {Count} scanner(s)", result.Count);
         return result;
     }
 
     public byte[] Scan(string deviceId, int dpi = 300)
     {
+        _logger.LogInformation("Starting scan. DeviceId={DeviceId}, Dpi={Dpi}", deviceId, dpi);
         var managerType = Type.GetTypeFromProgID(DeviceManagerProgId)!;
         dynamic manager = Activator.CreateInstance(managerType)!;
 
@@ -57,7 +69,9 @@ public class WiaScanner
         // Transfer as JPEG
         const string jpegFormatGuid = "{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}";
         dynamic imageFile = item.Transfer(jpegFormatGuid);
-        return (byte[])imageFile.FileData.BinaryData;
+        var bytes = (byte[])imageFile.FileData.BinaryData;
+        _logger.LogInformation("Scan completed. DeviceId={DeviceId}, Bytes={Bytes}", deviceId, bytes.Length);
+        return bytes;
     }
 
     private static void SetProperty(dynamic properties, int propertyId, int value)
