@@ -45,7 +45,25 @@ Output: `RentaCaaR.ScannerAgent/bin/Release/net8.0-windows/win-x64/publish/Renta
 iscc installer/setup.iss
 ```
 
-Output: `installer/Output/RentaCaaR-Scanner-Setup-1.0.1.exe`
+Output: `installer/Output/RentaCaaR-Scanner-Setup-1.0.2.exe`
+
+## Automated Release (GitHub Actions)
+
+This repository includes a workflow at `.github/workflows/release.yml` that:
+
+1. Restores and publishes the agent in `Release`
+2. Installs Inno Setup on the runner
+3. Builds the installer from `installer/setup.iss`
+4. Uploads `RentaCaaR-Scanner-Setup-*.exe` to a GitHub Release
+
+It runs automatically when you push a tag like `v1.0.2`:
+
+```bash
+git tag v1.0.2
+git push origin v1.0.2
+```
+
+Important: keep the version aligned across `RentaCaaR.ScannerAgent.csproj` and `installer/setup.iss` before creating the tag.
 
 ## Development (run as console app)
 

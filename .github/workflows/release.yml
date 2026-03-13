@@ -1,0 +1,46 @@
+name: Build And Release Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore RentaCaaR.ScannerAgent/RentaCaaR.ScannerAgent.csproj
+
+      - name: Publish
+        run: dotnet publish RentaCaaR.ScannerAgent/RentaCaaR.ScannerAgent.csproj -c Release
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          Remove-Item -Path installer/Output/*.exe -ErrorAction SilentlyContinue
+          & "C:/Program Files (x86)/Inno Setup 6/ISCC.exe" installer/setup.iss
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/Output/RentaCaaR-Scanner-Setup-*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

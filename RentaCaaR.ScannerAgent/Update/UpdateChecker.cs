@@ -31,7 +31,11 @@ public class UpdateChecker : BackgroundService
 
     private async Task CheckForUpdateAsync()
     {
-        if (!_config.IsRegistered || string.IsNullOrEmpty(_config.BackendUrl)) return;
+        if (!_config.IsRegistered || string.IsNullOrEmpty(_config.BackendUrl))
+        {
+            _logger.LogInformation("Skipping update check: agent is not registered or backend URL is missing.");
+            return;
+        }
 
         try
         {
@@ -44,13 +48,23 @@ public class UpdateChecker : BackgroundService
                 _http.DefaultRequestHeaders.Add("X-Agent-Auth", $"{_config.AgentId}:{_config.Secret}");
 
             var response = await _http.GetAsync(url);
-            if (!response.IsSuccessStatusCode) return;
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Update check returned HTTP {StatusCode}. Body: {Body}",
+                    (int)response.StatusCode, errorBody);
+                return;
+            }
 
             var body = await response.Content.ReadAsStringAsync();
             var result = JsonSerializer.Deserialize<UpdateResponse>(body,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            if (result?.HasUpdate != true || string.IsNullOrEmpty(result.DownloadUrl)) return;
+            if (result?.HasUpdate != true || string.IsNullOrEmpty(result.DownloadUrl))
+            {
+                _logger.LogInformation("No update available. Current version: {Current}", AgentConfig.AgentVersion);
+                return;
+            }
 
             _logger.LogInformation("Update available: {Current} → {New}. Downloading...",
                 AgentConfig.AgentVersion, result.Version);
@@ -72,6 +86,7 @@ public class UpdateChecker : BackgroundService
             _logger.LogInformation("Downloading update from {Url}", downloadUrl);
             var data = await _http.GetByteArrayAsync(downloadUrl);
             await File.WriteAllBytesAsync(tempPath, data);
+            _logger.LogInformation("Update installer downloaded to {Path} ({Bytes} bytes)", tempPath, data.Length);
 
             _logger.LogInformation("Launching installer silently...");
             Process.Start(new ProcessStartInfo
