@@ -54,4 +54,13 @@ public class AgentConfig
         key.SetValue("DefaultScannerId", scannerId);
         DefaultScannerId = scannerId;
     }
+
+    public void ClearCredentials()
+    {
+        using var key = Registry.LocalMachine.CreateSubKey(RegistryPath);
+        key?.DeleteValue("AgentId", throwOnMissingValue: false);
+        key?.DeleteValue("Secret", throwOnMissingValue: false);
+        AgentId = null;
+        Secret = null;
+    }
 }

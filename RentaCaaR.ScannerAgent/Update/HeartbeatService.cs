@@ -35,7 +35,14 @@ public class HeartbeatService : BackgroundService
             var content = new StringContent(payload, Encoding.UTF8, "application/json");
             _http.DefaultRequestHeaders.Clear();
             _http.DefaultRequestHeaders.Add("X-Agent-Auth", $"{_config.AgentId}:{_config.Secret}");
-            await _http.PostAsync($"{_config.BackendUrl.TrimEnd('/')}/api/agent/heartbeat", content);
+            var response = await _http.PostAsync(
+                $"{_config.BackendUrl.TrimEnd('/')}/api/agent/heartbeat", content);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _logger.LogWarning("Heartbeat rejected (401), clearing local credentials");
+                _config.ClearCredentials();
+            }
         }
         catch { /* heartbeat is best-effort */ }
     }
