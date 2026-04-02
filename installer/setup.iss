@@ -1,5 +1,5 @@
 #define MyAppName "RentaCaaR Scanner Agent"
-#define MyAppVersion "1.0.12"
+#define MyAppVersion "1.0.13"
 #define MyAppPublisher "RentaCaaR"
 #define MyAppExeName "RentaCaaR.ScannerAgent.exe"
 #define ServiceName "RentaCaaRScanner"

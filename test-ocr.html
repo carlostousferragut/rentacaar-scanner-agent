@@ -97,6 +97,9 @@
     </svg>
     Extraer datos (POST /process)
   </button>
+  <button id="debug-btn" style="margin-left:8px;background:#6b21a8" disabled>
+    🔍 Ver texto raw (debug)
+  </button>
   <button id="scan-btn" style="margin-left:8px" disabled>
     <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zm0 9.75c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z"/>
@@ -128,6 +131,7 @@
   const preview     = document.getElementById('preview')
   const clearBtn    = document.getElementById('clear-btn')
   const processBtn  = document.getElementById('process-btn')
+  const debugBtn    = document.getElementById('debug-btn')
   const scanBtn     = document.getElementById('scan-btn')
   const resultCard  = document.getElementById('result')
   const badgeWrap   = document.getElementById('badge-wrap')
@@ -170,6 +174,7 @@
     previewWrap.style.display = 'none'
     dropZone.style.display = ''
     processBtn.disabled = true
+    debugBtn.disabled = true
     resultCard.style.display = 'none'
     fileInput.value = ''
   })
@@ -182,6 +187,7 @@
       previewWrap.style.display = 'block'
       dropZone.style.display = 'none'
       processBtn.disabled = false
+      debugBtn.disabled = false
     }
     reader.readAsDataURL(file)
   }
@@ -202,6 +208,32 @@
       showError(err.message)
     } finally {
       setLoading(processBtn, false)
+    }
+  })
+
+  // ── POST /debug-ocr ─────────────────────────────────────────────────────────
+  debugBtn.addEventListener('click', async () => {
+    if (!currentBase64) return
+    setLoading(debugBtn, true)
+    try {
+      const res = await fetch(`${AGENT}/debug-ocr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: currentBase64 }),
+      })
+      const data = await res.json()
+      resultCard.style.display = 'block'
+      badgeWrap.innerHTML = '<span class="badge none">Debug — texto raw de Tesseract</span>'
+      fieldsBody.innerHTML = data.map(r => `
+        <tr><td class="key" colspan="2" style="background:#f3f4f6;font-weight:600">Rotación ${r.angle}°</td></tr>
+        <tr><td class="val" colspan="2" style="white-space:pre-wrap;font-family:monospace;font-size:0.75rem">${r.rawOcr || '(vacío)'}</td></tr>
+      `).join('')
+      rawJson.textContent = JSON.stringify(data, null, 2)
+      resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } catch (err) {
+      showError(err.message)
+    } finally {
+      setLoading(debugBtn, false)
     }
   })
 

@@ -198,6 +198,43 @@ app.MapPost("/process", async (HttpContext ctx) =>
     }
 });
 
+// POST /debug-ocr  body: { imageBase64: string }
+// Devuelve el texto raw que extrae Tesseract antes de parsear — solo para diagnóstico.
+app.MapPost("/debug-ocr", async (HttpContext ctx) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<ProcessRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    if (req == null || string.IsNullOrWhiteSpace(req.ImageBase64))
+        return Results.BadRequest(new { error = "imageBase64 es requerido" });
+
+    var b64 = req.ImageBase64.Contains(',') ? req.ImageBase64.Split(',')[1] : req.ImageBase64;
+    var imageBytes = Convert.FromBase64String(b64);
+
+    // Try all 4 rotations and return raw OCR text for each
+    var rotations = new[] { (imageBytes, 0) }.Concat(
+        new[] { (System.Drawing.RotateFlipType.Rotate90FlipNone, 90),
+                (System.Drawing.RotateFlipType.Rotate180FlipNone, 180),
+                (System.Drawing.RotateFlipType.Rotate270FlipNone, 270) }
+        .Select(r =>
+        {
+            using var ms = new MemoryStream(imageBytes);
+            using var bmp = new System.Drawing.Bitmap(ms);
+            bmp.RotateFlip(r.Item1);
+            using var outMs = new MemoryStream();
+            bmp.Save(outMs, System.Drawing.Imaging.ImageFormat.Png);
+            return (outMs.ToArray(), r.Item2);
+        }));
+
+    var results = rotations.Select(r => new
+    {
+        angle = r.Item2,
+        rawOcr = RentaCaaR.ScannerAgent.Ocr.MrzDecoder.GetRawOcr(r.Item1),
+    }).ToList();
+
+    return Results.Ok(results);
+});
+
 // POST /register  body: { token: string, backendUrl: string }
 app.MapPost("/register", async (HttpContext ctx) =>
 {

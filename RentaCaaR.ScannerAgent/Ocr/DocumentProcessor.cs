@@ -25,7 +25,7 @@ public class DocumentProcessor
         // 2. Try MRZ on all 4 rotations (phone photos can be in any orientation)
         foreach (var (rotated, angle) in GetRotations(imageBytes))
         {
-            var mrz = MrzDecoder.TryDecode(rotated);
+            var mrz = MrzDecoder.TryDecode(rotated, _logger);
             if (mrz != null)
             {
                 _logger.LogInformation("Document decoded via MRZ at {Angle}°: {Type}", angle, mrz.DocumentType);
