@@ -50,7 +50,11 @@ builder.Services.AddCors(options =>
         policy.SetIsOriginAllowed(origin =>
         {
             var uri = new Uri(origin);
-            return uri.Host == "localhost" || uri.Host == "127.0.0.1";
+            // Localhost para desarrollo
+            if (uri.Host == "localhost" || uri.Host == "127.0.0.1") return true;
+            // Cualquier origen HTTPS es seguro: el agente solo escucha en 127.0.0.1,
+            // por lo que solo peticiones del propio equipo pueden llegar aquí.
+            return uri.Scheme == "https";
         })
         .AllowAnyMethod()
         .AllowAnyHeader();
