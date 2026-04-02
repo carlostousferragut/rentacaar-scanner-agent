@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RentaCaaR — Test OCR</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #111; padding: 24px; }
+    h1 { font-size: 1.25rem; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 24px; }
+
+    .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    .card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; color: #333; }
+
+    .drop-zone {
+      border: 2px dashed #ccc; border-radius: 8px; padding: 32px;
+      text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
+      background: #fafafa;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: #2563eb; background: #eff6ff; }
+    .drop-zone input { display: none; }
+    .drop-zone p { font-size: 0.85rem; color: #888; margin-top: 6px; }
+
+    #preview-wrap { margin-top: 12px; display: none; }
+    #preview { max-width: 100%; max-height: 300px; border-radius: 6px; border: 1px solid #ddd; }
+
+    button {
+      background: #111; color: #fff; border: none; border-radius: 6px;
+      padding: 10px 20px; font-size: 0.9rem; cursor: pointer; margin-top: 12px;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary { background: #fff; color: #111; border: 1px solid #ccc; }
+
+    .spinner {
+      width: 14px; height: 14px; border: 2px solid #ffffff44;
+      border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #result { display: none; }
+    .badge {
+      display: inline-block; padding: 2px 10px; border-radius: 99px;
+      font-size: 0.75rem; font-weight: 600; margin-bottom: 12px;
+    }
+    .badge.ok  { background: #dcfce7; color: #166534; }
+    .badge.err { background: #fee2e2; color: #991b1b; }
+    .badge.none { background: #f3f4f6; color: #6b7280; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { text-align: left; padding: 6px 8px; background: #f9fafb; color: #555; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
+    td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+    td.key { color: #6b7280; width: 40%; }
+    td.val { font-family: monospace; font-size: 0.82rem; }
+    td.val.empty { color: #bbb; font-style: italic; }
+
+    .raw { background: #1e1e1e; color: #d4d4d4; border-radius: 6px; padding: 14px; font-size: 0.78rem; font-family: monospace; overflow-x: auto; white-space: pre; margin-top: 12px; }
+
+    .agent-status { font-size: 0.8rem; padding: 6px 12px; border-radius: 6px; display: inline-block; margin-bottom: 16px; }
+    .agent-status.ok   { background: #dcfce7; color: #166534; }
+    .agent-status.err  { background: #fee2e2; color: #991b1b; }
+    .agent-status.checking { background: #fef9c3; color: #854d0e; }
+  </style>
+</head>
+<body>
+
+<h1>RentaCaaR — Test OCR</h1>
+<p class="subtitle">Prueba la extracción de datos de documentos sin necesitar escáner físico.</p>
+
+<div id="agent-status" class="agent-status checking">⏳ Comprobando agente...</div>
+
+<!-- Subir imagen -->
+<div class="card">
+  <h2>1. Selecciona una imagen del documento</h2>
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" accept="image/*" />
+    <svg width="32" height="32" fill="none" stroke="#aaa" stroke-width="1.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+    </svg>
+    <p>Arrastra una foto del <strong>reverso del DNI</strong> o haz clic para seleccionar</p>
+    <p>JPG, PNG, BMP — también vale una foto de móvil</p>
+  </div>
+  <div id="preview-wrap">
+    <img id="preview" alt="Vista previa" />
+    <br />
+    <button class="secondary" id="clear-btn">✕ Quitar imagen</button>
+  </div>
+</div>
+
+<!-- Acciones -->
+<div class="card">
+  <h2>2. Procesar</h2>
+  <button id="process-btn" disabled>
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5z"/>
+    </svg>
+    Extraer datos (POST /process)
+  </button>
+  <button id="scan-btn" style="margin-left:8px" disabled>
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zm0 9.75c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z"/>
+    </svg>
+    Escanear con escáner (POST /scan)
+  </button>
+</div>
+
+<!-- Resultado -->
+<div class="card" id="result">
+  <h2>3. Resultado</h2>
+  <div id="badge-wrap"></div>
+  <table id="fields-table">
+    <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
+    <tbody id="fields-body"></tbody>
+  </table>
+  <details style="margin-top:12px">
+    <summary style="cursor:pointer;font-size:0.8rem;color:#888">JSON completo</summary>
+    <div class="raw" id="raw-json"></div>
+  </details>
+</div>
+
+<script>
+  const AGENT = 'http://127.0.0.1:7823'
+
+  const dropZone    = document.getElementById('drop-zone')
+  const fileInput   = document.getElementById('file-input')
+  const previewWrap = document.getElementById('preview-wrap')
+  const preview     = document.getElementById('preview')
+  const clearBtn    = document.getElementById('clear-btn')
+  const processBtn  = document.getElementById('process-btn')
+  const scanBtn     = document.getElementById('scan-btn')
+  const resultCard  = document.getElementById('result')
+  const badgeWrap   = document.getElementById('badge-wrap')
+  const fieldsBody  = document.getElementById('fields-body')
+  const rawJson     = document.getElementById('raw-json')
+  const agentStatus = document.getElementById('agent-status')
+
+  let currentBase64 = null
+
+  // ── Comprobar agente ────────────────────────────────────────────────────────
+  async function checkAgent() {
+    try {
+      const r = await fetch(`${AGENT}/health`, { signal: AbortSignal.timeout(2000) })
+      const d = await r.json()
+      agentStatus.className = 'agent-status ok'
+      agentStatus.textContent = `✓ Agente v${d.version} — ${d.registered ? `registrado (${d.orgName})` : 'sin registrar'}`
+      scanBtn.disabled = false
+    } catch {
+      agentStatus.className = 'agent-status err'
+      agentStatus.textContent = '✗ Agente no disponible en http://127.0.0.1:7823'
+    }
+  }
+  checkAgent()
+
+  // ── Drag & drop + file input ────────────────────────────────────────────────
+  dropZone.addEventListener('click', () => fileInput.click())
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover') })
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'))
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault()
+    dropZone.classList.remove('dragover')
+    const file = e.dataTransfer.files[0]
+    if (file) loadFile(file)
+  })
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) loadFile(fileInput.files[0])
+  })
+  clearBtn.addEventListener('click', () => {
+    currentBase64 = null
+    previewWrap.style.display = 'none'
+    dropZone.style.display = ''
+    processBtn.disabled = true
+    resultCard.style.display = 'none'
+    fileInput.value = ''
+  })
+
+  function loadFile(file) {
+    const reader = new FileReader()
+    reader.onload = e => {
+      currentBase64 = e.target.result  // data URL
+      preview.src = currentBase64
+      previewWrap.style.display = 'block'
+      dropZone.style.display = 'none'
+      processBtn.disabled = false
+    }
+    reader.readAsDataURL(file)
+  }
+
+  // ── POST /process ───────────────────────────────────────────────────────────
+  processBtn.addEventListener('click', async () => {
+    if (!currentBase64) return
+    setLoading(processBtn, true)
+    try {
+      const res = await fetch(`${AGENT}/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: currentBase64 }),
+      })
+      const data = await res.json()
+      showResult(data)
+    } catch (err) {
+      showError(err.message)
+    } finally {
+      setLoading(processBtn, false)
+    }
+  })
+
+  // ── POST /scan ──────────────────────────────────────────────────────────────
+  scanBtn.addEventListener('click', async () => {
+    setLoading(scanBtn, true)
+    try {
+      const res = await fetch(`${AGENT}/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      // Mostrar imagen escaneada
+      if (data.imageBase64) {
+        const src = data.imageBase64.startsWith('data:') ? data.imageBase64 : `data:image/jpeg;base64,${data.imageBase64}`
+        currentBase64 = src
+        preview.src = src
+        previewWrap.style.display = 'block'
+        dropZone.style.display = 'none'
+        processBtn.disabled = false
+      }
+      showResult(data)
+    } catch (err) {
+      showError(err.message)
+    } finally {
+      setLoading(scanBtn, false)
+    }
+  })
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  const FIELD_LABELS = {
+    documentType:   'Tipo documento',
+    documentNumber: 'Número',
+    firstName:      'Nombre',
+    lastName1:      '1er apellido',
+    lastName2:      '2º apellido',
+    dateOfBirth:    'Fecha nacimiento',
+    expiryDate:     'Caducidad',
+    nationality:    'Nacionalidad',
+    gender:         'Género',
+    method:         'Método extracción',
+  }
+
+  function showResult(data) {
+    resultCard.style.display = 'block'
+    const fields = data.fields ?? data
+    const method = fields.method ?? 'NONE'
+    const ok = method !== 'NONE' && fields.documentType !== 'UNKNOWN'
+
+    badgeWrap.innerHTML = ok
+      ? `<span class="badge ok">✓ Detectado — ${method}</span>`
+      : `<span class="badge ${method === 'NONE' ? 'none' : 'err'}">${method === 'NONE' ? '✗ No detectado' : '⚠ Parcial'}</span>`
+
+    fieldsBody.innerHTML = Object.entries(FIELD_LABELS).map(([key, label]) => {
+      const val = fields[key]
+      return `<tr>
+        <td class="key">${label}</td>
+        <td class="val ${!val ? 'empty' : ''}">${val ?? '—'}</td>
+      </tr>`
+    }).join('')
+
+    // JSON sin imageBase64 para que no sea enorme
+    const display = { ...data }
+    delete display.imageBase64
+    rawJson.textContent = JSON.stringify(display, null, 2)
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  function showError(msg) {
+    resultCard.style.display = 'block'
+    badgeWrap.innerHTML = `<span class="badge err">✗ Error</span>`
+    fieldsBody.innerHTML = `<tr><td class="key">Error</td><td class="val">${msg}</td></tr>`
+    rawJson.textContent = msg
+  }
+
+  function setLoading(btn, loading) {
+    btn.disabled = loading
+    const spinner = btn.querySelector('.spinner')
+    if (loading) {
+      if (!spinner) btn.insertAdjacentHTML('afterbegin', '<span class="spinner"></span>')
+    } else {
+      spinner?.remove()
+      btn.disabled = false
+    }
+  }
+</script>
+</body>
+</html>
