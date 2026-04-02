@@ -31,8 +31,21 @@ public class WiaScanner
                 if ((int)info.Type == ScannerDeviceType)
                 {
                     string id = (string)info.DeviceID;
-                    string name = GetPropertyValue(info.Properties, "Name") ?? id;
-                    result.Add(new ScannerInfo(id, name));
+                    // WIA_DIP_DEV_NAME(7) → friendly name, WIA_DIP_DEV_DESC(4) → model description
+                    // WIA_DIP_VEND_DESC(3) → manufacturer. Se prueban en orden hasta obtener algo útil.
+                    string? name = GetPropertyValue(info.Properties, "Name")
+                        ?? GetPropertyById(info.Properties, 4)   // WIA_DIP_DEV_DESC
+                        ?? GetPropertyById(info.Properties, 7);  // WIA_DIP_DEV_NAME (por id)
+
+                    // Si tenemos descripción pero no fabricante en el nombre, intentamos añadirlo
+                    if (name != null && !name.Contains("HP", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var vendor = GetPropertyById(info.Properties, 3); // WIA_DIP_VEND_DESC
+                        if (!string.IsNullOrWhiteSpace(vendor))
+                            name = $"{vendor} {name}".Trim();
+                    }
+
+                    result.Add(new ScannerInfo(id, name ?? id));
                 }
             }
             catch (Exception ex)
@@ -66,8 +79,8 @@ public class WiaScanner
         SetProperty(item.Properties, 6147, dpi);  // WIA_IPS_XRES
         SetProperty(item.Properties, 6148, dpi);  // WIA_IPS_YRES
 
-        // Transfer as JPEG
-        const string jpegFormatGuid = "{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}";
+        // Transfer as JPEG (CAE = JPEG, CAB = BMP)
+        const string jpegFormatGuid = "{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}";
         dynamic imageFile = item.Transfer(jpegFormatGuid);
         var bytes = (byte[])imageFile.FileData.BinaryData;
         _logger.LogInformation("Scan completed. DeviceId={DeviceId}, Bytes={Bytes}", deviceId, bytes.Length);
@@ -95,6 +108,23 @@ public class WiaScanner
         foreach (dynamic prop in properties)
         {
             try { if ((string)prop.Name == name) return (string)prop.get_Value(); }
+            catch { }
+        }
+        return null;
+    }
+
+    private static string? GetPropertyById(dynamic properties, int propertyId)
+    {
+        foreach (dynamic prop in properties)
+        {
+            try
+            {
+                if ((int)prop.PropertyID == propertyId)
+                {
+                    var val = (string)prop.get_Value();
+                    return string.IsNullOrWhiteSpace(val) ? null : val;
+                }
+            }
             catch { }
         }
         return null;
