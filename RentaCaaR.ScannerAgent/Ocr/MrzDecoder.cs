@@ -9,7 +9,7 @@ namespace RentaCaaR.ScannerAgent.Ocr;
 public static class MrzDecoder
 {
     private static readonly string TessDataPath = Path.Combine(
-        AppContext.BaseDirectory, "tessdata");
+        Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory, "tessdata");
 
     public static DocumentFields? TryDecode(byte[] imageBytes, ILogger? logger = null)
     {
