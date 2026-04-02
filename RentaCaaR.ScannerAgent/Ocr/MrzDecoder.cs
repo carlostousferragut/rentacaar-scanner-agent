@@ -19,30 +19,49 @@ public static class MrzDecoder
             using var ms = new MemoryStream(imageBytes);
             using var originalBitmap = new Bitmap(ms);
 
-            // Crop bottom 20% of image where MRZ is located
-            int cropHeight = originalBitmap.Height / 5;
-            int cropY = originalBitmap.Height - cropHeight;
-            var rect = new Rectangle(0, cropY, originalBitmap.Width, cropHeight);
-            using var croppedBitmap = originalBitmap.Clone(rect, originalBitmap.PixelFormat);
-
-            // Use mrz tessdata if available, fall back to eng
             string lang = File.Exists(Path.Combine(TessDataPath, "mrz.traineddata")) ? "mrz" : "eng";
-
             using var engine = new TesseractEngine(TessDataPath, lang, EngineMode.Default);
             engine.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<");
 
-            using var croppedStream = new MemoryStream();
-            croppedBitmap.Save(croppedStream, System.Drawing.Imaging.ImageFormat.Png);
-            using var pix = Pix.LoadFromMemory(croppedStream.ToArray());
-            using var page = engine.Process(pix);
-            var text = page.GetText() ?? "";
+            // Try bottom 30% crop first (MRZ zone for landscape documents)
+            var cropped = TryWithCrop(engine, originalBitmap, 0.30);
+            if (cropped != null) return cropped;
 
-            return ParseMrz(text);
+            // Fallback: full image (handles tilted or zoomed shots)
+            return TryWithFullImage(engine, imageBytes);
         }
         catch
         {
             return null;
         }
+    }
+
+    private static DocumentFields? TryWithCrop(TesseractEngine engine, Bitmap bitmap, double fraction)
+    {
+        try
+        {
+            int cropHeight = (int)(bitmap.Height * fraction);
+            int cropY = bitmap.Height - cropHeight;
+            var rect = new Rectangle(0, cropY, bitmap.Width, cropHeight);
+            using var cropped = bitmap.Clone(rect, bitmap.PixelFormat);
+            using var outMs = new MemoryStream();
+            cropped.Save(outMs, System.Drawing.Imaging.ImageFormat.Png);
+            using var pix = Pix.LoadFromMemory(outMs.ToArray());
+            using var page = engine.Process(pix);
+            return ParseMrz(page.GetText() ?? "");
+        }
+        catch { return null; }
+    }
+
+    private static DocumentFields? TryWithFullImage(TesseractEngine engine, byte[] imageBytes)
+    {
+        try
+        {
+            using var pix = Pix.LoadFromMemory(imageBytes);
+            using var page = engine.Process(pix);
+            return ParseMrz(page.GetText() ?? "");
+        }
+        catch { return null; }
     }
 
     private static DocumentFields? ParseMrz(string text)
