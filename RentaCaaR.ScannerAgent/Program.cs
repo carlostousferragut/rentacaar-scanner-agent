@@ -165,6 +165,37 @@ app.MapPost("/scan", async (HttpContext ctx) =>
     }
 });
 
+// POST /process  body: { imageBase64: string }
+// Extrae campos de un documento a partir de una imagen ya capturada (sin escáner).
+// Útil para pruebas o para procesar fotos tomadas con móvil.
+app.MapPost("/process", async (HttpContext ctx) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<ProcessRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+    if (req == null || string.IsNullOrWhiteSpace(req.ImageBase64))
+        return Results.BadRequest(new { error = "imageBase64 es requerido" });
+
+    try
+    {
+        // Admite tanto base64 puro como data URL (data:image/jpeg;base64,...)
+        var b64 = req.ImageBase64.Contains(',') ? req.ImageBase64.Split(',')[1] : req.ImageBase64;
+        var imageBytes = Convert.FromBase64String(b64);
+        appLogger.LogInformation("/process image received: {Bytes} byte(s)", imageBytes.Length);
+
+        var fields = processor.Process(imageBytes);
+        appLogger.LogInformation("/process completed. Method={Method}, DocumentType={DocumentType}", fields.Method, fields.DocumentType);
+
+        return Results.Ok(new { fields });
+    }
+    catch (Exception ex)
+    {
+        appLogger.LogError(ex, "/process failed");
+        return Results.Problem(ex.Message);
+    }
+});
+
 // POST /register  body: { token: string, backendUrl: string }
 app.MapPost("/register", async (HttpContext ctx) =>
 {
@@ -224,6 +255,7 @@ await app.RunAsync();
 
 // ─── Request/Response models ────────────────────────────────────────────────
 record ScanRequest { public string? ScannerId { get; init; } public int? Dpi { get; init; } }
+record ProcessRequest { public string? ImageBase64 { get; init; } }
 record RegisterRequest { public string? Token { get; init; } public string? BackendUrl { get; init; } public string? Name { get; init; } }
 record ActivateResponse { public string AgentId { get; init; } = ""; public string Secret { get; init; } = ""; public string OrgName { get; init; } = ""; public string OfficeName { get; init; } = ""; }
 record SettingsRequest { public string? DefaultScannerId { get; init; } }
