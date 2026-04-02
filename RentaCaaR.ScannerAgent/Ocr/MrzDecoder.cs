@@ -142,7 +142,7 @@ public static class MrzDecoder
     {
         var lines = text.Split('\n')
             .Select(l => Regex.Replace(l.Trim(), @"[^A-Z0-9<]", ""))
-            .Where(l => l.Length >= 30)
+            .Where(l => l.Length >= 20)
             .ToList();
 
         if (lines.Count < 2) return null;
@@ -152,10 +152,15 @@ public static class MrzDecoder
         if (td3Lines.Count >= 2)
             return ParseTD3(td3Lines[0][..44], td3Lines[1][..44]);
 
-        // TD1 (ID card): 3 lines × 30 chars
-        var td1Lines = lines.Where(l => l.Length >= 30).ToList();
+        // TD1 (ID card): 3 lines × 30 chars (pad with < if OCR cut them short)
+        var td1Lines = lines.Where(l => l.Length >= 20).ToList();
         if (td1Lines.Count >= 3)
-            return ParseTD1(td1Lines[0][..30], td1Lines[1][..30], td1Lines[2][..30]);
+        {
+            var l1 = td1Lines[0].PadRight(30, '<')[..30];
+            var l2 = td1Lines[1].PadRight(30, '<')[..30];
+            var l3 = td1Lines[2].PadRight(30, '<')[..30];
+            return ParseTD1(l1, l2, l3);
+        }
 
         return null;
     }

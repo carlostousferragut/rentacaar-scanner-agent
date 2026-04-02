@@ -82,6 +82,13 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Download mrz.traineddata
+        if: steps.release_check.outputs.should_release == 'true'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/DoubangoTelecom/tesseractMRZ/raw/master/tessdata_best/mrz.traineddata" `
+            -OutFile "RentaCaaR.ScannerAgent/tessdata/mrz.traineddata"
+
       - name: Restore
         if: steps.release_check.outputs.should_release == 'true'
         run: dotnet restore RentaCaaR.ScannerAgent/RentaCaaR.ScannerAgent.csproj
