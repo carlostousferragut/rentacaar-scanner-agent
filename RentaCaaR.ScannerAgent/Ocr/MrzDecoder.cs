@@ -60,7 +60,7 @@ public static class MrzDecoder
             using var scaled = ScaleUp(bmp, 2);
             using var gray   = ToGrayscale(scaled);
             using var outMs  = new MemoryStream();
-            gray.Save(outMs, ImageFormat.Png);
+            gray.Save(outMs, System.Drawing.Imaging.ImageFormat.Png);
             using var pix  = Pix.LoadFromMemory(outMs.ToArray());
             using var page = engine.Process(pix);
             return page.GetText() ?? "";
@@ -81,7 +81,7 @@ public static class MrzDecoder
             using var scaled   = ScaleUp(cropped, 2);
             using var gray     = ToGrayscale(scaled);
             using var outMs    = new MemoryStream();
-            gray.Save(outMs, ImageFormat.Png);
+            gray.Save(outMs, System.Drawing.Imaging.ImageFormat.Png);
             using var pix  = Pix.LoadFromMemory(outMs.ToArray());
             using var page = engine.Process(pix);
             var text = page.GetText() ?? "";
@@ -98,7 +98,7 @@ public static class MrzDecoder
             using var scaled = ScaleUp(bitmap, 2);
             using var gray   = ToGrayscale(scaled);
             using var outMs  = new MemoryStream();
-            gray.Save(outMs, ImageFormat.Png);
+            gray.Save(outMs, System.Drawing.Imaging.ImageFormat.Png);
             using var pix  = Pix.LoadFromMemory(outMs.ToArray());
             using var page = engine.Process(pix);
             var text = page.GetText() ?? "";
