@@ -47,7 +47,7 @@ public static class MrzDecoder
     /// </summary>
     public static string GetRawOcr(byte[] imageBytes)
     {
-        if (!Directory.Exists(TessDataPath)) return "(tessdata not found)";
+        if (!Directory.Exists(TessDataPath)) return $"(tessdata not found — looked at: {TessDataPath})";
         try
         {
             using var ms = new MemoryStream(imageBytes);
