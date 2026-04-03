@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using Microsoft.Win32;
 
 namespace RentaCaaR.ScannerAgent.Scanner;
 
@@ -45,7 +46,15 @@ public class WiaScanner
                             name = $"{vendor} {name}".Trim();
                     }
 
-                    result.Add(new ScannerInfo(id, name ?? id));
+                    // Fallback: WIA_DIP_PNP_ID (17) → FriendlyName/DeviceDesc en HKLM\SYSTEM\...\Enum
+                    if (name == null)
+                    {
+                        var pnpId = GetPropertyById(info.Properties, 17);
+                        if (!string.IsNullOrWhiteSpace(pnpId))
+                            name = GetPnpFriendlyName(pnpId);
+                    }
+
+                    result.Add(new ScannerInfo(id, name ?? GetRegistryFriendlyName(id) ?? id));
                 }
             }
             catch (Exception ex)
@@ -101,6 +110,45 @@ public class WiaScanner
             }
             catch { }
         }
+    }
+
+    // pnpId ejemplo: "USB\VID_03F0&PID_0DB6&MI_00\8&24B25E88&0&C000"
+    // Registro:       HKLM\SYSTEM\CurrentControlSet\Enum\USB\VID_03F0...\8&24B25E88...\FriendlyName
+    private static string? GetPnpFriendlyName(string pnpId)
+    {
+        try
+        {
+            var regPath  = $@"SYSTEM\CurrentControlSet\Enum\{pnpId}";
+            using var key = Registry.LocalMachine.OpenSubKey(regPath);
+            if (key == null) return null;
+            var friendly = key.GetValue("FriendlyName") as string;
+            if (!string.IsNullOrWhiteSpace(friendly)) return friendly;
+            // Algunos drivers solo tienen DeviceDesc (ej: "@oem12.inf,%strDesc%;HP Envy 6100 series (USB)")
+            var desc = key.GetValue("DeviceDesc") as string;
+            if (string.IsNullOrWhiteSpace(desc)) return null;
+            // DeviceDesc puede tener formato "@path;DisplayName" — extraer la parte legible
+            var semicolon = desc.LastIndexOf(';');
+            return semicolon >= 0 ? desc[(semicolon + 1)..].Trim() : desc.Trim();
+        }
+        catch { return null; }
+    }
+
+    // deviceId formato WIA: {6BDD1FC6-810F-11D0-BEC7-08002BE2092F}\0001
+    // Look up FriendlyName en HKLM\SYSTEM\CurrentControlSet\Control\Class\{GUID}\NNNN
+    private static string? GetRegistryFriendlyName(string deviceId)
+    {
+        try
+        {
+            var backslash = deviceId.IndexOf('\\');
+            if (backslash < 0) return null;
+            var classGuid = deviceId[..backslash];
+            var instance  = deviceId[(backslash + 1)..];
+            var regPath   = $@"SYSTEM\CurrentControlSet\Control\Class\{classGuid}\{instance}";
+            using var key = Registry.LocalMachine.OpenSubKey(regPath);
+            var friendly  = key?.GetValue("FriendlyName") as string;
+            return string.IsNullOrWhiteSpace(friendly) ? null : friendly;
+        }
+        catch { return null; }
     }
 
     private static string? GetPropertyValue(dynamic properties, string name)
