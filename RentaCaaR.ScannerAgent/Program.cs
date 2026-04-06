@@ -272,6 +272,12 @@ app.MapPost("/register", async (HttpContext ctx) =>
     }
 });
 
+// GET /settings
+app.MapGet("/settings", () => Results.Ok(new
+{
+    defaultScannerId = config.DefaultScannerId,
+}));
+
 // POST /settings  body: { defaultScannerId?: string }
 app.MapPost("/settings", async (HttpContext ctx) =>
 {
